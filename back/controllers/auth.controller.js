@@ -121,3 +121,52 @@ export const logout =async(req, res) => {
         res.status(500).json({message: 'server error', error: error.message});
     }
 }
+
+/**
+ * Refreshes the access token using a valid refresh token.
+ * 
+ * The refresh token is sent in the request cookies. This function verifies 
+ * the validity of the refresh token, checks if it exists in the Redis 
+ * database, and generates a new access token if valid. If the refresh 
+ * token is not found or is invalid, appropriate error responses are sent.
+ * 
+ * @param {Object} req - The request object containing cookies with the refresh token.
+ * @param {Object} res - The response object used to send back the HTTP responses.
+ * @returns {void}
+ */
+export const refreshToken = async(req,res) => {
+    /*
+    the refresh token is sent in the request object as a cookie so that we can 
+    verify it is valid because the refresh token is only valid for 7 days
+    */
+    
+    try {//check if the refresh token in the request is valid
+
+        const refreshToken = req.cookies.refreshToken;
+        
+        if(!refreshToken){
+            return res.status(410).json({message: "refresh token not found}"});
+        }
+        else {
+            const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+            //checks if the user refresh token is in the database
+            const storedToken = await redis.get(`refresh_token: ${decoded.userId}`)
+
+            if(storedToken !== refreshToken){
+                return res.status(401).json(({message: "unauthorized"}))
+            } else {// if the refresh token is in the redis databse then sign the userId object with the access token secret
+                const newAccessToken = jwt.sign({userId: decoded.userId}, process.env.ACCESS_TOKEN_SECRET, {expiresIn: "15m"});
+                res.cookie("newAccessToken", newAccessToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === "production",//only sends the cookie over HTTPS
+                    samesite: "strict", 
+                    maxAge: 60 * 15 * 1000, //expires in 15 minutes
+                })
+                return res.status(200).json({message: "access token refreshed successfully"});
+            }
+
+        }
+    } catch(error) {
+        return res.status(500).json({message: "server error", error: error.message});
+    }
+};
