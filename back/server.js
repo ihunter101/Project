@@ -7,6 +7,10 @@ import cookieParser from "cookie-parser";
 
 import authRoutes from "./routes/auth.routes.js"
 
+import productRoutes from "./routes/product.routes.js"
+
+
+
 
 import { connectDB } from "./lib/db.js";
 
@@ -23,6 +27,8 @@ app.use(cookieParser());
 
 //authentication routes
 app.use("/api/auth", authRoutes);
+app.use("/api/product", productRoutes);
+
 
 
 app.listen(PORT,() => {
