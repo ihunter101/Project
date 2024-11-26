@@ -1,172 +1,171 @@
 import User from "../../models/user.models.js";
 import jwt from "jsonwebtoken";
 import redis from "../lib/redis.js";
-import { set } from "mongoose";
 
+// Generate Access and Refresh Tokens
 const generateToken = (userId) => {
-    //generates access that expires in 15 minutes
-     const accessToken  = jwt.sign({userId}, process.env.ACCESS_TOKEN_SECRET, {expiresIn:'15m'});
-     //generates refresh token that expires in 7 days
-     const refreshToken =jwt.sign({userId}, process.env.REFRESH_TOKEN_SECRET, {expiresIn:'7d'});
-    //returns access token and refresh token
-     return {accessToken, refreshToken}
-    } 
+    const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+    const refreshToken = jwt.sign({ userId }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+    return { accessToken, refreshToken };
+};
 
-    //storing the refresh token in the database
-    const storeRefreshToken = async(userId, refreshToken) => {
-        await redis.set(`refresh token ${userId}`, refreshToken, "EX", 60 * 60 * 24 * 7);// expires in 7 days
-    }
+// Store Refresh Token in Redis
+const storeRefreshToken = async (userId, refreshToken) => {
+    await redis.set(`refresh_token:${userId}`, refreshToken, "EX", 60 * 60 * 24 * 7); // expires in 7 days
+};
+
+// Set Cookies for Access and Refresh Tokens
 const setCookies = (res, accessToken, refreshToken) => {
     res.cookie("accessToken", accessToken, {
-        httpOnly: true, //prevents XSS attacks
-        secure:process.env.NODE_ENV === "production",//only sends the cookie over HTTPS
-        samesite: "strict", //prevents CRSF attacks 
-        maxAge: 60 * 15 * 1000, //expires in 15 minutes
+        httpOnly: true, // Prevents XSS attacks
+        secure: process.env.NODE_ENV === "production", // Only send over HTTPS in production
+        sameSite: "strict", // Prevents CSRF attacks
+        maxAge: 60 * 15 * 1000, // Expires in 15 minutes
     });
     res.cookie("refreshToken", refreshToken, {
-        httpOnly: true, //prevents XSS attacks
-        secure:process.env.NODE_ENV === "production",//only sends the cookie over HTTPS
-        samesite: "strict", //prevents CRSF attacks 
-        maxAge: 7* 60 * 60 * 15 * 1000, //expires in 7 days
+        httpOnly: true, // Prevents XSS attacks
+        secure: process.env.NODE_ENV === "production", // Only send over HTTPS in production
+        sameSite: "strict", // Prevents CSRF attacks
+        maxAge: 7 * 24 * 60 * 60 * 1000, // Expires in 7 days
     });
-}
-export const signup = async (req, res) =>{
-    const {name, email, password} = req.body
-    const userExits = await User.findOne({email});
+};
 
-        try {
-            //checks if a user exist
-            if (userExits){
-                return res.status(400).json({success: false, message: `This email ${email} already exists`});
-            }
-            //creates a new user
-            const user = await User.create({name, email, password});
+// Sign Up Controller
+export const signup = async (req, res) => {
+    const { name, email, password } = req.body;
+    try {
+        // Check if user already exists
+        const userExists = await User.findOne({ email });
+        if (userExists) {
+            return res.status(400).json({ success: false, message: `This email ${email} already exists` });
+        }
 
-            const {accessToken, refreshToken} = generateToken(user._id);
+        // Create new user
+        const user = await User.create({ name, email, password });
 
-            await storeRefreshToken(user._id, refreshToken);//stores the refresh token in the database
+        // Generate tokens
+        const { accessToken, refreshToken } = generateToken(user._id);
 
-            setCookies(res, accessToken, refreshToken);
-            //responds success
-            res.status(201).json({
+        // Store refresh token in Redis
+        await storeRefreshToken(user._id, refreshToken);
+
+        // Set cookies
+        setCookies(res, accessToken, refreshToken);
+
+        // Respond with user data
+        return res.status(201).json({
+            success: true,
+            message: "User created successfully",
+            user: {
                 id: user._id,
                 name: user.name,
                 email: user.email,
-                role: user.role
-            }), 
-            console.log('user created successfully');
-        } catch (error) {
-            //responds error
-            console.log('error in signup controller', error.message);
-            return res.status(500).json({success: false, message: error.message});
-        }
-    //res.send("sign up route called")
+                role: user.role,
+            },
+        });
+    } catch (error) {
+        console.error("Error in signup controller:", error.message);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 };
 
+// Login Controller
 export const login = async (req, res) => {
+    const { email, password } = req.body;
     try {
-        const { email, password } = req.body;
-        console.log("Request body:", req.body);
-
-        // Find the user by email and explicitly include the password field
-        const user = await User.findOne({ email }).select('+password');
-        console.log("User found:", user);
-
-        if (user) {
-            // Validate password
-            const isPasswordValid = await user.comparePassword(password);
-            console.log("Password valid:", isPasswordValid);
-
-            if (isPasswordValid) {
-                // Generate tokens
-                const { accessToken, refreshToken } = generateToken(user._id);
-
-                // Store the refresh token and set cookies
-                await storeRefreshToken(user._id, refreshToken);
-                setCookies(res, accessToken, refreshToken);
-
-                console.log("User logged in successfully");
-                return res.json({
-                    _id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                });
-            }
+        // Find user by email and include password field
+        const user = await User.findOne({ email }).select("+password");
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Invalid email or password" });
         }
 
-        // If user not found or password is invalid
-        console.log("Invalid email or password");
-        return res.status(401).json({ success: false, message: "Invalid email or password" });
+        // Validate password
+        const isPasswordValid = await user.comparePassword(password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ success: false, message: "Invalid email or password" });
+        }
+
+        // Generate tokens
+        const { accessToken, refreshToken } = generateToken(user._id);
+
+        // Store refresh token in Redis
+        await storeRefreshToken(user._id, refreshToken);
+
+        // Set cookies
+        setCookies(res, accessToken, refreshToken);
+
+        // Respond with user data
+        return res.json({
+            success: true,
+            message: "User logged in successfully",
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+            },
+        });
     } catch (error) {
         console.error("Error in login controller:", error.message);
         return res.status(500).json({ success: false, message: error.message });
     }
 };
 
-
-
-export const logout =async(req, res) => {
+// Logout Controller
+export const logout = async (req, res) => {
     const refreshToken = req.cookies.refreshToken;
-
     try {
         if (refreshToken) {
             const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-            await redis.del(`refresh token: ${decoded.userId}`) //deletes the refresh token from the database
+            const redisKey = `refresh_token:${decoded.userId}`;
+            await redis.del(redisKey); // Delete refresh token from Redis
+
+            // Clear cookies
             res.clearCookie("refreshToken");
             res.clearCookie("accessToken");
-            return res.status(200).json({success: true, message: "Log out successfully"});
+
+            return res.status(200).json({ success: true, message: "Logged out successfully" });
         }
+        return res.status(400).json({ success: false, message: "Refresh token not found" });
     } catch (error) {
-        res.status(500).json({message: 'server error', error: error.message});
+        console.error("Error during logout:", error.message);
+        return res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
-}
+};
 
-/**
- * Refreshes the access token using a valid refresh token.
- * 
- * The refresh token is sent in the request cookies. This function verifies 
- * the validity of the refresh token, checks if it exists in the Redis 
- * database, and generates a new access token if valid. If the refresh 
- * token is not found or is invalid, appropriate error responses are sent.
- * 
- * @param {Object} req - The request object containing cookies with the refresh token.
- * @param {Object} res - The response object used to send back the HTTP responses.
- * @returns {void}
- */
-export const refreshToken = async(req,res) => {
-    /*
-    the refresh token is sent in the request object as a cookie so that we can 
-    verify it is valid because the refresh token is only valid for 7 days
-    */
-    
-    try {//check if the refresh token in the request is valid
-
+// Refresh Access Token Controller
+export const refreshToken = async (req, res) => {
+    try {
         const refreshToken = req.cookies.refreshToken;
-        
-        if(!refreshToken){
-            return res.status(410).json({message: "refresh token not found}"});
+        if (!refreshToken) {
+            return res.status(410).json({ message: "Refresh token not found" });
         }
-        else {
-            const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-            //checks if the user refresh token is in the database
-            const storedToken = await redis.get(`refresh_token: ${decoded.userId}`)
 
-            if(storedToken !== refreshToken){
-                return res.status(401).json(({message: "unauthorized"}))
-            } else {// if the refresh token is in the redis databse then sign the userId object with the access token secret
-                const newAccessToken = jwt.sign({userId: decoded.userId}, process.env.ACCESS_TOKEN_SECRET, {expiresIn: "15m"});
-                res.cookie("newAccessToken", newAccessToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === "production",//only sends the cookie over HTTPS
-                    samesite: "strict", 
-                    maxAge: 60 * 15 * 1000, //expires in 15 minutes
-                })
-                return res.status(200).json({message: "access token refreshed successfully"});
-            }
+        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+        const redisKey = `refresh_token:${decoded.userId}`;
+        const storedToken = await redis.get(redisKey);
 
+        if (storedToken !== refreshToken) {
+            return res.status(401).json({ message: "Unauthorized: Token mismatch" });
         }
-    } catch(error) {
-        return res.status(500).json({message: "server error", error: error.message});
+
+        // Generate new access token
+        const newAccessToken = jwt.sign({ userId: decoded.userId }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+
+        // Set new access token in cookies
+        res.cookie("newAccessToken", newAccessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 15 * 60 * 1000, // 15 minutes
+        });
+
+        return res.status(200).json({ message: "Access token refreshed successfully" });
+    } catch (error) {
+        console.error("Error refreshing token:", error);
+        if (error.name === "JsonWebTokenError") {
+            return res.status(400).json({ message: "Invalid token" });
+        }
+        return res.status(500).json({ message: "Server error", error: error.message });
     }
 };

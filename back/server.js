@@ -18,7 +18,9 @@ const PORT = process.env.PORT || 5000 //|| represents the "or" and is used here 
 
 app.use(express.json());//this is used to parse the JSON data that is sent to the server
 
+
 app.use(cookieParser());
+
 //authentication routes
 app.use("/api/auth", authRoutes);
 
