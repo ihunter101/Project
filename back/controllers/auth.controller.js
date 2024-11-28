@@ -4,14 +4,19 @@ import redis from "../lib/redis.js";
 
 // Generate Access and Refresh Tokens
 const generateToken = (userId) => {
-    const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-    const refreshToken = jwt.sign({ userId }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+    const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, { 
+        expiresIn: "15m" 
+    });
+
+    const refreshToken = jwt.sign({ userId }, process.env.REFRESH_TOKEN_SECRET, { 
+        expiresIn: "7d",
+     });
     return { accessToken, refreshToken };
 };
 
 // Store Refresh Token in Redis
 const storeRefreshToken = async (userId, refreshToken) => {
-    await redis.set(`refresh_token:${userId}`, refreshToken, "EX", 60 * 60 * 24 * 7); // expires in 7 days
+    await redis.set(`refresh_token:${userId}`, refreshToken, "EX", 7 * 24 * 60 * 60 ); // expires in 7 days
 };
 
 // Set Cookies for Access and Refresh Tokens

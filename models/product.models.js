@@ -1,37 +1,39 @@
 import mongoose from "mongoose";
 
+
+
 const productSchema = new mongoose.Schema({ ////this is a function that defines the stucture(schema) of the products. 
     name: {
         type: String,
         required: [true, 'Please add a name'],
     },
     description: {
-        type: string,
+        type: String,
         required: [true, 'Please add a description'],
     },
     price: {
-        type: number,
+        type: Number,
         required: [true, 'Please add a price'],
         default: 0,
     },
     image: {
-        type: string,
+        type: String,
         required: [true, "Please add an image"],
     },
     category: {
-        type: string,
+        type: String,
         required: [true, "Please place in a category"],
     },
     countInStock:{
-        type: number,
+        type: Number,
         required: [true, "Please add a count in stock"],
     },
     rating: {
-        type: number,
+        type: Number,
         
     },
     isFeatured: {
-        type: booleon,
+        type: Boolean,
         default: false
     },
         

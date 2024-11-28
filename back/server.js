@@ -1,3 +1,5 @@
+//back/server.js
+
 import express from "express"; 
 //is a way of importing the Express module into your JavaScript file, allowing you to use it to build web servers 
 //and handle HTTP requests.
@@ -8,6 +10,7 @@ import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.routes.js"
 
 import productRoutes from "./routes/product.routes.js"
+
 
 
 
