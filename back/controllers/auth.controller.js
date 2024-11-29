@@ -1,4 +1,4 @@
-import User from "../../models/user.models.js";
+import User from "../models/user.models.js";
 import jwt from "jsonwebtoken";
 import redis from "../lib/redis.js";
 

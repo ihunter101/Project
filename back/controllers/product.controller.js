@@ -1,5 +1,5 @@
 //back/controllers/product.controller.js
-import Product from "../../models/product.models.js"
+import Product from "../models/product.models.js"
 import redis from "../lib/redis.js"
 import cloudinary from "../lib/cloudinary.js"
 export const getAllProducts = async (req, res) => {
@@ -75,4 +75,109 @@ export const createProduct = async (req, res) => {
         res.status(500).json({message: "Server error", error: error.message});
         }
     };
+
+export const deletedProduct = async (req, res) => {
+    try {
+          // Find the product by ID
+        const product = await Product.findById(req.params.id);
+
+            // If product not found, return a 410 error
+        if (!product) {
+            return res.status(410).json({ message: "Product not found" });
+        }
+    
+            // If the product has an image, attempt to delete it from Cloudinary
+        if (product.image) {
+            const imageId = product.image.split("/").pop().split(".")[0];
+            try {
+                await cloudinary.uploader.destroy(`products/${imageId}`);
+                console.log("Deleted image from Cloudinary");
+            } catch (error) {
+                console.log("Error deleting image from Cloudinary", error);
+            }
+        }
+    
+        // Delete the product from the database
+        await Product.findByIdAndDelete(req.params.id);
+    
+        // Send success response
+        res.json({ message: "Product deleted successfully" });
+    } catch (error) {
+        console.log("Error in deleting product controller", error.message);
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+    
+export const getRecommendedProducts = async (req, res)=> {
+    try {
+        const products = await Product.aggregate([
+            {$sample: {size:4}},//$sample is an aggregation stage that randomly selects a 
+                               //specified number of documents from the collection
+
+            {$project: { // $project is an aggregation stage used to specify 
+                        //which fields to include or exclude from the result.
+
+                //the vallue 1 indicates that the field should be included in the result
+                _id: 1,
+                name: 1,
+                price: 1, 
+                description: 1,
+                image: 1
+            }}
+        ]);
+
+        res.json(products); 
+    } catch (error) {
+        console.log("Error in getRecommendedProducts Controller", error.message);
+        res.status(500).json({message:"Server error", error: error.message});
+    }
+}
+
+export const getProductByCategory = async (req, res) => {
+
+    //get the category from the user's request 
+    const {category} = req.params.category
+
+    //find the category in the mongoose database and send the product object
+    try {
+        const product = await Product.find({category: category})
+        res.json({product})
+    } catch (error) {
+        console.log("Error in getProductByCategory Controller", error.message)
+        return res.status(500).json({message: "server error", error: error.message});
+        
+    }
+}
+
+
+export const toggleFeaturedProducts = async (req, res) => {
+    const {id} = req.params.id 
+
+    try {
+        const product = await Product.findById(id);
+         
+        if (product) {
+            product.isFeatured = !product.isFeatured;
+            const updatedFeaturedProduct = await product.save();
+            await updatedFeaturedProductCache();
+            res.json(product);
+        }
+        } catch (error) {
+        console.log("Error in toggleFeaturedProducts Controller", error.message);
+        return res.status(500).json({message: "server error", error: error.message});
+    }
+}
+
+async function updatedFeaturedProductCache() {
+    try {
+        //the lean function is used to return plain javascript object rather than the entrei mongoose doc
+        const featuredProducts = await Product.find({isFeatured: true}).lean();
+        
+        //redis stores data as strings, so we need to convert it into a string before storing it
+        await redis.set("featured_products", JSON.stringify(featuredProducts));//the set function is used to store data in the redis database
+    } catch (error) {
+        console.log("Error in updatedFeaturedProductCache Controller", error.message);
+        return res.status(500).json({message: "server error", error: error.message});
+    }
+}
 export default {getAllProducts}
